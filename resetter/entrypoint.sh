@@ -11,6 +11,14 @@ fi
 
 IFS=';' read -ra PAIRS <<< "$VOLUME_PAIRS"
 
+volume_is_empty() {
+  local vol="$1"
+  if ! docker volume inspect "$vol" >/dev/null 2>&1; then
+    return 0
+  fi
+  docker run --rm -v "$vol:/v" alpine:3.20 sh -lc '[ -z "$(ls -A /v)" ]'
+}
+
 sync_volume_from_seed() {
   local seed="$1"
   local live="$2"
@@ -29,6 +37,15 @@ bake_volume_from_live() {
   docker run --rm -v "$live:/src:ro" -v "$seed:/dst" alpine:3.20 sh -lc 'rm -rf /dst/* && cp -a /src/. /dst/'
 }
 
+ensure_seed_initialized() {
+  local seed="$1"
+  local live="$2"
+  if volume_is_empty "$seed"; then
+    echo ">>> SEED EMPTY: $seed, baking from $live"
+    bake_volume_from_live "$seed" "$live"
+  fi
+}
+
 stop_services() {
   [[ -z "$SERVICES" ]] && return
   echo ">>> stopping: $SERVICES"
@@ -44,7 +61,10 @@ start_services() {
 reset_once() {
   echo "=== RESET at $(date -Iseconds) ==="
   stop_services
-  for pair in "${PAIRS[@]}"; do sync_volume_from_seed "${pair%%:*}" "${pair##*:}"; done
+  for pair in "${PAIRS[@]}"; do
+    ensure_seed_initialized "${pair%%:*}" "${pair##*:}"
+    sync_volume_from_seed "${pair%%:*}" "${pair##*:}"
+  done
   start_services
   echo "=== done ==="
 }
