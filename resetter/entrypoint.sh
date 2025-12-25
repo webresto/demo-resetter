@@ -3,6 +3,8 @@ set -euo pipefail
 
 VOLUME_PAIRS="${VOLUME_PAIRS:-}"
 SERVICES="${SERVICES:-}"
+CRON_SCHEDULE="${CRON_SCHEDULE:-}"
+CRON_COMMAND="${CRON_COMMAND:-reset}"
 
 if [[ -z "$VOLUME_PAIRS" ]]; then
   echo "VOLUME_PAIRS is empty"
@@ -10,6 +12,37 @@ if [[ -z "$VOLUME_PAIRS" ]]; then
 fi
 
 IFS=';' read -ra PAIRS <<< "$VOLUME_PAIRS"
+
+write_cron_env() {
+  local env_file="/etc/cron.env"
+  {
+    printf 'VOLUME_PAIRS=%q\n' "$VOLUME_PAIRS"
+    printf 'SERVICES=%q\n' "$SERVICES"
+  } > "$env_file"
+}
+
+start_cron() {
+  if [[ -z "$CRON_SCHEDULE" ]]; then
+    echo "CRON_SCHEDULE is empty"
+    exit 1
+  fi
+  case "$CRON_COMMAND" in
+    reset|bake) ;;
+    *)
+      echo "CRON_COMMAND must be 'reset' or 'bake'"
+      exit 1
+      ;;
+  esac
+  write_cron_env
+  mkdir -p /etc/crontabs
+  {
+    echo "SHELL=/bin/bash"
+    echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    echo "$CRON_SCHEDULE /bin/bash -lc 'source /etc/cron.env; /entrypoint.sh $CRON_COMMAND'"
+  } > /etc/crontabs/root
+  echo ">>> cron schedule: $CRON_SCHEDULE ($CRON_COMMAND)"
+  crond -f -l 2
+}
 
 volume_is_empty() {
   local vol="$1"
@@ -80,11 +113,17 @@ bake_once() {
 case "${1:-}" in
   reset) reset_once ;;
   bake) bake_once ;;
+  cron) start_cron ;;
   "")
-    echo "Usage:"
-    echo "  bake   # save live → seed"
-    echo "  reset  # restore seed → live"
-    exit 1
+    if [[ -n "$CRON_SCHEDULE" ]]; then
+      start_cron
+    else
+      echo "Usage:"
+      echo "  bake   # save live → seed"
+      echo "  reset  # restore seed → live"
+      echo "  cron   # run on CRON_SCHEDULE"
+      exit 1
+    fi
     ;;
   *)
     exec "$@"

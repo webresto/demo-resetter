@@ -22,11 +22,14 @@ the Docker daemon via the Docker socket.
 
 - `VOLUME_PAIRS` (required): `seed:live;seed2:live2`
 - `SERVICES` (optional): space-separated container names to stop/start.
+- `CRON_SCHEDULE` (optional): cron schedule, enables periodic runs.
+- `CRON_COMMAND` (optional): `reset` or `bake` (default: `reset`).
 
 ### Commands
 
 - `reset` — restore seed → live
 - `bake` — save live → seed
+- `cron` — run on `CRON_SCHEDULE`
 
 ### Examples
 
@@ -54,6 +57,16 @@ Using `docker-compose` (see `docker-compose.yml`):
 ```bash
 docker compose up -d
 docker compose run --rm resetter reset
+```
+
+Scheduled runs with cron (example: every day at 04:00):
+
+```bash
+docker run -d \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e VOLUME_PAIRS="postgres_seed:postgres_data" \
+  -e CRON_SCHEDULE="0 4 * * *" \
+  ghcr.io/<owner>/<repo>
 ```
 
 ## Local build
