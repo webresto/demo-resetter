@@ -62,12 +62,10 @@ VOLUME_SEPARATOR="${VOLUME_PREFIX_INFO#*|}"
 # Function to get full volume name with prefix
 get_volume_name() {
   local vol="$1"
-  # Convert underscores to hyphens if using hyphen separator
-  if [[ "$VOLUME_SEPARATOR" == "-" ]]; then
-    vol="${vol//_/-}"
-  fi
+  # Always convert underscores to hyphens in volume names (Coolify uses hyphens)
+  local vol_hyphen="${vol//_/-}"
   if [[ -n "$VOLUME_PREFIX" ]]; then
-    echo "${VOLUME_PREFIX}${VOLUME_SEPARATOR}${vol}"
+    echo "${VOLUME_PREFIX}_${vol_hyphen}"
   else
     echo "$vol"
   fi
