@@ -20,26 +20,36 @@ detect_volume_prefix() {
   local sample_hyphen="${sample_vol//_/-}"
   echo "[DEBUG] Looking for volume matching: *${sample_vol} or *${sample_hyphen}" >&2
   
-  # Try to find the volume with any prefix (try both _ and - versions)
+  # List all volumes and find matching pattern
+  local all_volumes
+  all_volumes=$(docker volume ls --format "{{.Name}}")
+  
+  echo "[DEBUG] Searching in volumes:" >&2
+  echo "$all_volumes" | head -10 >&2
+  
+  # Try to find volume ending with sample_hyphen (e.g., *_postgres-data or *-postgres-data)
   local found
-  found=$(docker volume ls --format "{{.Name}}" | grep -E "(^|_)(${sample_vol}|${sample_hyphen})$" | head -1)
+  found=$(echo "$all_volumes" | grep -E "[_-]${sample_hyphen}$" | head -1)
+  
+  if [[ -z "$found" ]]; then
+    # Try with underscore version
+    found=$(echo "$all_volumes" | grep -E "[_-]${sample_vol}$" | head -1)
+  fi
   
   if [[ -n "$found" ]]; then
-    # Extract prefix and actual volume name
-    if [[ "$found" =~ ^(.+)[_-](${sample_hyphen})$ ]]; then
+    echo "[DEBUG] Found matching volume: $found" >&2
+    # Extract prefix - everything before the last separator and volume name
+    if [[ "$found" =~ ^(.+)[-_](postgres-data|postgres_data|tmp-data|tmp_data)$ ]]; then
       local prefix="${BASH_REMATCH[1]}"
-      echo "[DEBUG] Detected volume prefix: '$prefix', using hyphen format" >&2
-      echo "$prefix|-"
-    elif [[ "$found" =~ ^(.+)_(${sample_vol})$ ]]; then
-      local prefix="${BASH_REMATCH[1]}"
-      echo "[DEBUG] Detected volume prefix: '$prefix', using underscore format" >&2
-      echo "$prefix|_"
+      local separator="${found:${#prefix}:1}"
+      echo "[DEBUG] Detected prefix: '$prefix', separator: '$separator'" >&2
+      echo "$prefix|$separator"
     else
-      echo "[DEBUG] No prefix detected, using volumes as-is" >&2
+      echo "[DEBUG] Could not parse prefix from: $found" >&2
       echo "|_"
     fi
   else
-    echo "[DEBUG] No prefix detected, using volumes as-is" >&2
+    echo "[DEBUG] No matching volume found, using volumes as-is" >&2
     echo "|_"
   fi
 }
