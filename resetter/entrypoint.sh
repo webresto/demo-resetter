@@ -46,10 +46,18 @@ start_cron() {
 
 volume_is_empty() {
   local vol="$1"
+  echo "[DEBUG] Checking if volume '$vol' is empty..."
   if ! docker volume inspect "$vol" >/dev/null 2>&1; then
+    echo "[DEBUG]   → Volume does not exist yet, treating as empty"
     return 0
   fi
+  local contents
+  contents=$(docker run --rm -v "$vol:/v" alpine:3.20 sh -lc 'ls -A /v | head -20')
+  echo "[DEBUG]   → Contents: ${contents:-<empty>}"
   docker run --rm -v "$vol:/v" alpine:3.20 sh -lc '[ -z "$(ls -A /v)" ]'
+  local result=$?
+  echo "[DEBUG]   → Is empty: $result"
+  return $result
 }
 
 sync_volume_from_seed() {
@@ -58,7 +66,12 @@ sync_volume_from_seed() {
   echo ">>> RESET: $live ← $seed"
   docker volume inspect "$seed" >/dev/null 2>&1 || docker volume create "$seed" >/dev/null
   docker volume inspect "$live" >/dev/null 2>&1 || docker volume create "$live" >/dev/null
+  echo "[DEBUG] Before sync:"
+  echo "[DEBUG]   seed ($seed): $(docker run --rm -v "$seed:/v" alpine:3.20 sh -lc 'ls -A /v | head -10')"
+  echo "[DEBUG]   live ($live): $(docker run --rm -v "$live:/v" alpine:3.20 sh -lc 'ls -A /v | head -10')"
   docker run --rm -v "$seed:/src:ro" -v "$live:/dst" alpine:3.20 sh -lc 'rm -rf /dst/* /dst/.[!.]* /dst/..?* 2>/dev/null || true; cp -a /src/. /dst/'
+  echo "[DEBUG] After sync:"
+  echo "[DEBUG]   live ($live): $(docker run --rm -v "$live:/v" alpine:3.20 sh -lc 'ls -A /v | head -10')"
 }
 
 bake_volume_from_live() {
@@ -67,15 +80,23 @@ bake_volume_from_live() {
   echo ">>> BAKE: $seed ← $live"
   docker volume inspect "$seed" >/dev/null 2>&1 || docker volume create "$seed" >/dev/null
   docker volume inspect "$live" >/dev/null 2>&1 || docker volume create "$live" >/dev/null
+  echo "[DEBUG] Before bake:"
+  echo "[DEBUG]   live ($live): $(docker run --rm -v "$live:/v" alpine:3.20 sh -lc 'ls -A /v | head -10')"
+  echo "[DEBUG]   seed ($seed): $(docker run --rm -v "$seed:/v" alpine:3.20 sh -lc 'ls -A /v | head -10')"
   docker run --rm -v "$live:/src:ro" -v "$seed:/dst" alpine:3.20 sh -lc 'rm -rf /dst/* /dst/.[!.]* /dst/..?* 2>/dev/null || true; cp -a /src/. /dst/'
+  echo "[DEBUG] After bake:"
+  echo "[DEBUG]   seed ($seed): $(docker run --rm -v "$seed:/v" alpine:3.20 sh -lc 'ls -A /v | head -10')"
 }
 
 ensure_seed_initialized() {
   local seed="$1"
   local live="$2"
+  echo "[DEBUG] Ensuring seed '$seed' is initialized..."
   if volume_is_empty "$seed"; then
     echo ">>> SEED EMPTY: $seed, baking from $live"
     bake_volume_from_live "$seed" "$live"
+  else
+    echo "[DEBUG] Seed '$seed' already has data, skipping initialization"
   fi
 }
 
