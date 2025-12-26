@@ -58,7 +58,7 @@ sync_volume_from_seed() {
   echo ">>> RESET: $live ← $seed"
   docker volume inspect "$seed" >/dev/null 2>&1 || docker volume create "$seed" >/dev/null
   docker volume inspect "$live" >/dev/null 2>&1 || docker volume create "$live" >/dev/null
-  docker run --rm -v "$seed:/src:ro" -v "$live:/dst" alpine:3.20 sh -lc 'rm -rf /dst/* && cp -a /src/. /dst/'
+  docker run --rm -v "$seed:/src:ro" -v "$live:/dst" alpine:3.20 sh -lc 'rm -rf /dst/* /dst/.[!.]* /dst/..?* 2>/dev/null || true; cp -a /src/. /dst/'
 }
 
 bake_volume_from_live() {
@@ -67,7 +67,7 @@ bake_volume_from_live() {
   echo ">>> BAKE: $seed ← $live"
   docker volume inspect "$seed" >/dev/null 2>&1 || docker volume create "$seed" >/dev/null
   docker volume inspect "$live" >/dev/null 2>&1 || docker volume create "$live" >/dev/null
-  docker run --rm -v "$live:/src:ro" -v "$seed:/dst" alpine:3.20 sh -lc 'rm -rf /dst/* && cp -a /src/. /dst/'
+  docker run --rm -v "$live:/src:ro" -v "$seed:/dst" alpine:3.20 sh -lc 'rm -rf /dst/* /dst/.[!.]* /dst/..?* 2>/dev/null || true; cp -a /src/. /dst/'
 }
 
 ensure_seed_initialized() {
@@ -85,10 +85,10 @@ stop_services() {
   for s in $SERVICES; do docker stop "$s" >/dev/null 2>&1 || true; done
 }
 
-start_services() {
+restart_services() {
   [[ -z "$SERVICES" ]] && return
-  echo ">>> starting: $SERVICES"
-  for s in $SERVICES; do docker start "$s" >/dev/null 2>&1 || true; done
+  echo ">>> restarting: $SERVICES"
+  for s in $SERVICES; do docker restart "$s" >/dev/null 2>&1 || true; done
 }
 
 reset_once() {
@@ -98,7 +98,7 @@ reset_once() {
     ensure_seed_initialized "${pair%%:*}" "${pair##*:}"
     sync_volume_from_seed "${pair%%:*}" "${pair##*:}"
   done
-  start_services
+  restart_services
   echo "=== done ==="
 }
 
@@ -106,7 +106,7 @@ bake_once() {
   echo "=== BAKE at $(date -Iseconds) ==="
   stop_services
   for pair in "${PAIRS[@]}"; do bake_volume_from_live "${pair%%:*}" "${pair##*:}"; done
-  start_services
+  restart_services
   echo "=== done ==="
 }
 
