@@ -33,40 +33,77 @@ the Docker daemon via the Docker socket.
 
 ### Examples
 
-Run once with `docker run`:
+#### Pull the image
+
+```bash
+docker pull ghcr.io/webresto/demo-resetter:main
+```
+
+#### Run once with `docker run`
 
 ```bash
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e VOLUME_PAIRS="postgres_seed:postgres_data;modules_seed:modules_data" \
   -e SERVICES="restoapp postgres" \
-  ghcr.io/<owner>/<repo> reset
+  ghcr.io/webresto/demo-resetter:main reset
 ```
 
-Bake seeds from live data:
+#### Bake seeds from live data
 
 ```bash
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e VOLUME_PAIRS="postgres_seed:postgres_data" \
-  ghcr.io/<owner>/<repo> bake
+  ghcr.io/webresto/demo-resetter:main bake
 ```
 
-Using `docker-compose` (see `docker-compose.yml`):
+#### Using `docker-compose` (see [docker-compose.yml](docker-compose.yml))
 
 ```bash
 docker compose up -d
 docker compose run --rm resetter reset
 ```
 
-Scheduled runs with cron (example: every day at 04:00):
+#### Running from inside container shell
+
+If you're already inside the resetter container shell (e.g., via `docker exec -it demo_resetter sh`), you can run commands directly:
+
+```bash
+# From inside the container
+/entrypoint.sh reset  # Restore seed → live
+/entrypoint.sh bake   # Save live → seed
+```
+
+#### Scheduled runs with cron (example: every day at 04:00)
 
 ```bash
 docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e VOLUME_PAIRS="postgres_seed:postgres_data" \
   -e CRON_SCHEDULE="0 4 * * *" \
-  ghcr.io/<owner>/<repo>
+  ghcr.io/webresto/demo-resetter:main
+```
+
+#### Complete example with RestoApp
+
+See [docker-compose.yml](docker-compose.yml) for a full example with RestoApp, PostgreSQL, and automated database resets every hour.
+
+**Quick start:**
+
+```bash
+# 1. Start services
+docker compose up -d
+
+# 2. Set up your database and application to desired state
+# (run migrations, add demo data, configure settings, etc.)
+
+# 3. Create seed snapshots from current state
+docker compose run --rm resetter bake
+
+# 4. Resetter will now automatically reset to this state every hour
+# Or manually trigger reset anytime:
+docker compose run --rm resetter reset
 ```
 
 ## Local build
@@ -77,5 +114,5 @@ docker build -t resetter ./resetter
 
 ## Image publishing
 
-The GitHub Action publishes images to `ghcr.io/<owner>/<repo>` on pushes to the default branch
+The GitHub Action publishes images to `ghcr.io/webresto/demo-resetter:main` on pushes to the default branch
 and on tags.

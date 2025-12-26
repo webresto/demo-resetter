@@ -1,13 +1,65 @@
 version: '3.8'
+
 services:
+  # Main application
+  restoapp:
+    image: 'ghcr.io/webresto/restoapp:dev'
+    restart: always
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    ports:
+      - '42880:8080'
+    environment:
+      DB_MIGRATE: safe
+      NODE_ENV: production
+      APP_NAME: restoapp-dev
+      DATASTORE: postgres
+      PG_HOST: postgres
+      AUTO_MIGRATION: 'TRUE'
+      MODULES_AUTO_UPDATE: 'TRUE'
+      STAGING: 1
+      LOG_LEVEL: debug
+      JWT_SECRET: secret_jwt_key_here
+    volumes:
+      - 'tmp_data:/app/.tmp'
+      - './modules:/app/modules'
+    depends_on:
+      - postgres
+
+  # PostgreSQL database
+  postgres:
+    image: 'postgres:17'
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - 'postgres_data:/var/lib/postgresql/data'
+
+  # Demo resetter - automatically resets database from seed every hour
   resetter:
-    build: ./resetter
+    image: 'ghcr.io/webresto/demo-resetter:main'
     container_name: demo_resetter
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      # пример: seed том ↔ live том
-      VOLUME_PAIRS: "postgres_seed:postgres_data;modules_seed:modules_data"
-      # какие контейнеры стопать/стартовать
+      # Seed volume : Live volume pairs
+      VOLUME_PAIRS: "postgres_seed:postgres_data;tmp_seed:tmp_data"
+      # Containers to stop/start during reset
       SERVICES: "restoapp postgres"
+      # Cron schedule: every hour at minute 0
+      CRON_SCHEDULE: "0 * * * *"
+      # Command to run on schedule
+      CRON_COMMAND: "reset"
+
+volumes:
+  # Live volumes (will be reset from seeds)
+  postgres_data:
+  tmp_data:
+
+  # Seed volumes (source of truth for resets)
+  # Create these with: docker compose run --rm resetter bake
+  postgres_seed:
+  tmp_seed:
