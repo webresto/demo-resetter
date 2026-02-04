@@ -44,6 +44,7 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - resetter_logs:/var/log
     environment:
       # Seed volume : Live volume pairs
       VOLUME_PAIRS: "postgres_seed:postgres_data;tmp_seed:tmp_data"
@@ -63,3 +64,6 @@ volumes:
   # Create these with: docker compose run --rm resetter bake
   postgres_seed:
   tmp_seed:
+  
+  # Resetter logs
+  resetter_logs:

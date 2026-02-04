@@ -5,6 +5,21 @@ VOLUME_PAIRS="${VOLUME_PAIRS:-}"
 SERVICES="${SERVICES:-}"
 CRON_SCHEDULE="${CRON_SCHEDULE:-}"
 CRON_COMMAND="${CRON_COMMAND:-reset}"
+LOG_FILE="${LOG_FILE:-/var/log/resetter.log}"
+
+# Setup logging - tee outputs to both file and stdout
+log_setup() {
+  mkdir -p "$(dirname "$LOG_FILE")"
+  # Ensure we write to both stdout and file
+  exec > >(tee -a "$LOG_FILE")
+  exec 2>&1
+}
+
+# Only setup logging if not already done
+if [[ "${LOGGING_SETUP:-}" != "1" ]]; then
+  export LOGGING_SETUP=1
+  log_setup
+fi
 
 if [[ -z "$VOLUME_PAIRS" ]]; then
   echo "VOLUME_PAIRS is empty"
@@ -96,7 +111,8 @@ start_cron() {
   {
     echo "SHELL=/bin/bash"
     echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    echo "$CRON_SCHEDULE /bin/bash -lc 'source /etc/cron.env; /entrypoint.sh $CRON_COMMAND'"
+    echo "LOGGING_SETUP=1"
+    echo "$CRON_SCHEDULE /bin/bash -c 'source /etc/cron.env && /entrypoint.sh $CRON_COMMAND 2>&1'"
   } > /etc/crontabs/root
   echo ">>> cron schedule: $CRON_SCHEDULE ($CRON_COMMAND)"
   crond -f -l 2
@@ -161,39 +177,109 @@ ensure_seed_initialized() {
 stop_services() {
   [[ -z "$SERVICES" ]] && return
   echo ">>> stopping: $SERVICES"
+  echo "[DEBUG] All running containers:"
+  docker ps --format "{{.Names}}"
   for s in $SERVICES; do
+    echo "[DEBUG] Trying to stop: $s"
     # Try exact name first, then pattern match
-    if ! docker stop "$s" >/dev/null 2>&1; then
+    if docker stop "$s" >/dev/null 2>&1; then
+      echo "[DEBUG] Stopped container by exact name: $s"
+    else
       # Find container by pattern
+      echo "[DEBUG] Container '$s' not found by exact name, searching by pattern..."
       local container
-      container=$(docker ps --format "{{.Names}}" | grep -E "^${s}-" | head -1)
+      container=$(docker ps --format "{{.Names}}" | grep -E "${s}" | head -1)
       if [[ -n "$container" ]]; then
-        echo "[DEBUG] Found container: $container (matched pattern: ${s}-)" >&2
-        docker stop "$container" >/dev/null 2>&1 || true
+        echo "[DEBUG] Found container: $container (matched pattern: ${s})"
+        if docker stop "$container" >/dev/null 2>&1; then
+          echo "[DEBUG] Successfully stopped: $container"
+        else
+          echo "[DEBUG] Failed to stop: $container"
+        fi
+      else
+        echo "[DEBUG] No container found matching pattern: ${s}"
       fi
     fi
   done
+}
+
+check_and_start_services() {
+  [[ -z "$SERVICES" ]] && return
+  echo ">>> checking services health: $SERVICES"
+  local services_restarted=0
+  for s in $SERVICES; do
+    local container=""
+    # Try to find container by exact name or pattern
+    if docker ps -a --format "{{.Names}}" | grep -qE "^${s}$"; then
+      container="$s"
+    else
+      container=$(docker ps -a --format "{{.Names}}" | grep -E "${s}" | head -1)
+    fi
+    
+    if [[ -n "$container" ]]; then
+      local status
+      status=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo "not found")
+      echo "[DEBUG] Container $container status: $status"
+      
+      if [[ "$status" != "running" ]]; then
+        echo "[WARN] Container $container is not running, starting it..."
+        if docker start "$container" >/dev/null 2>&1; then
+          echo "[INFO] Successfully started: $container"
+          services_restarted=$((services_restarted + 1))
+        else
+          echo "[ERROR] Failed to start: $container"
+        fi
+      fi
+    else
+      echo "[DEBUG] Container not found for service: $s"
+    fi
+  done
+  
+  if [[ $services_restarted -gt 0 ]]; then
+    echo "[INFO] Restarted $services_restarted service(s)"
+  else
+    echo "[INFO] All services are running"
+  fi
 }
 
 restart_services() {
   [[ -z "$SERVICES" ]] && return
-  echo ">>> restarting: $SERVICES"
+  echo ">>> starting: $SERVICES"
+  echo "[DEBUG] All containers (including stopped):"
+  docker ps -a --format "{{.Names}} ({{.Status}})"
   for s in $SERVICES; do
+    echo "[DEBUG] Trying to start: $s"
     # Try exact name first, then pattern match
-    if ! docker restart "$s" >/dev/null 2>&1; then
+    if docker start "$s" >/dev/null 2>&1; then
+      echo "[DEBUG] Started container by exact name: $s"
+    else
       # Find container by pattern
+      echo "[DEBUG] Container '$s' not found by exact name, searching by pattern..."
       local container
-      container=$(docker ps -a --format "{{.Names}}" | grep -E "^${s}-" | head -1)
+      container=$(docker ps -a --format "{{.Names}}" | grep -E "${s}" | head -1)
       if [[ -n "$container" ]]; then
-        echo "[DEBUG] Found container: $container (matched pattern: ${s}-)" >&2
-        docker restart "$container" >/dev/null 2>&1 || true
+        echo "[DEBUG] Found container: $container (matched pattern: ${s})"
+        if docker start "$container" >/dev/null 2>&1; then
+          echo "[DEBUG] Successfully started: $container"
+        else
+          echo "[DEBUG] Failed to start: $container"
+        fi
+      else
+        echo "[DEBUG] No container found matching pattern: ${s}"
       fi
     fi
   done
+  echo "[DEBUG] Final container status:"
+  docker ps --format "{{.Names}} ({{.Status}})"
 }
 
 reset_once() {
   echo "=== RESET at $(date -Iseconds) ==="
+  echo "[INFO] Log file: $LOG_FILE"
+  
+  # Check and start services if they are down before reset
+  check_and_start_services
+  
   echo "[DEBUG] VOLUME_PAIRS: $VOLUME_PAIRS"
   echo "[DEBUG] Detected prefix: '${VOLUME_PREFIX:-<none>}'"
   echo "[DEBUG] Parsed pairs:"
@@ -219,6 +305,7 @@ reset_once() {
 
 bake_once() {
   echo "=== BAKE at $(date -Iseconds) ==="
+  echo "[INFO] Log file: $LOG_FILE"
   echo "[DEBUG] Detected prefix: '${VOLUME_PREFIX:-<none>}'"
   stop_services
   for pair in "${PAIRS[@]}"; do
