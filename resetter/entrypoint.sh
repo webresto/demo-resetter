@@ -107,25 +107,21 @@ start_cron() {
       ;;
   esac
   write_cron_env
-  mkdir -p /etc/crontabs
+
+  local crontab_file="/etc/crontab"
   {
     # Heartbeat every 5 minutes to confirm cron is alive
     echo "*/5 * * * * echo '[HEARTBEAT] Cron is alive at' \$(date -Iseconds)"
     # Main reset/bake task
-    echo "$CRON_SCHEDULE LOGGING_SETUP=1 /bin/bash -c 'source /etc/cron.env && /entrypoint.sh $CRON_COMMAND 2>&1'"
-  } > /etc/crontabs/root
-  
+    echo "$CRON_SCHEDULE /bin/bash -c 'source /etc/cron.env && LOGGING_SETUP=1 /entrypoint.sh $CRON_COMMAND'"
+  } > "$crontab_file"
+
   echo ">>> cron schedule: $CRON_SCHEDULE ($CRON_COMMAND)"
   echo "[DEBUG] Crontab contents:"
-  cat /etc/crontabs/root
-  echo "[DEBUG] Starting crond with verbose logging..."
-  echo "[DEBUG] Testing cron environment..."
-  
-  # Test that cron can execute commands
-  echo "*/1 * * * * echo '[TEST] Cron test at' \$(date -Iseconds) >> /tmp/cron-test.log 2>&1" >> /etc/crontabs/root
-  
-  # Start crond in foreground with maximum logging
-  crond -f -l 0 -L /dev/stdout
+  cat "$crontab_file"
+
+  # supercronic logs to stdout — visible via docker logs
+  exec supercronic "$crontab_file"
 }
 
 volume_is_empty() {
