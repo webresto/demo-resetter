@@ -112,10 +112,19 @@ start_cron() {
     echo "SHELL=/bin/bash"
     echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     echo "LOGGING_SETUP=1"
+    # Heartbeat every 5 minutes to confirm cron is alive
+    echo "*/5 * * * * echo '[HEARTBEAT] Cron is alive at \$(date -Iseconds)'"
+    # Main reset/bake task
     echo "$CRON_SCHEDULE /bin/bash -c 'source /etc/cron.env && /entrypoint.sh $CRON_COMMAND 2>&1'"
   } > /etc/crontabs/root
+  
   echo ">>> cron schedule: $CRON_SCHEDULE ($CRON_COMMAND)"
-  crond -f -l 2
+  echo "[DEBUG] Crontab contents:"
+  cat /etc/crontabs/root
+  echo "[DEBUG] Starting crond with verbose logging..."
+  
+  # Start crond in foreground with maximum logging
+  crond -f -l 0 -L /dev/stdout
 }
 
 volume_is_empty() {
