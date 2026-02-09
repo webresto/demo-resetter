@@ -1,5 +1,4 @@
-FROM alpine:3.20
-RUN apk add --no-cache bash docker-cli coreutils
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+FROM python:3.12-alpine
+RUN pip install --no-cache-dir docker croniter
+COPY resetter.py /resetter.py
+ENTRYPOINT ["python", "/resetter.py"]
