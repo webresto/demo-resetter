@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Resetter — Docker volume reset/bake utility."""
 
+import argparse
 import logging
 import os
 import re
@@ -364,6 +365,34 @@ def start_cron(resetter: Resetter):
 # Entry point
 # ---------------------------------------------------------------------------
 def main():
+    parser = argparse.ArgumentParser(
+        prog="resetter",
+        description="Docker volume reset/bake utility. "
+        "Manages live Docker volumes by resetting them from seed snapshots.",
+        epilog=(
+            "environment variables:\n"
+            "  VOLUME_PAIRS    (required) Seed:live volume pairs separated by ;\n"
+            "                  Example: \"postgres_seed:postgres_data;tmp_seed:tmp_data\"\n"
+            "  SERVICES        Space-separated container names to stop/start\n"
+            "                  Example: \"restoapp postgres\"\n"
+            "  CRON_SCHEDULE   Cron expression for scheduled runs\n"
+            "                  Example: \"0 * * * *\" (every hour)\n"
+            "  CRON_COMMAND    Command to run on schedule: reset or bake (default: reset)\n"
+            "  LOG_FILE        Log file path (default: /var/log/resetter.log)\n"
+            "\n"
+            "examples:\n"
+            "  docker compose run --rm resetter reset\n"
+            "  docker compose run --rm resetter bake\n"
+            "  docker compose up resetter              # starts cron if CRON_SCHEDULE set\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser("reset", help="Restore live volumes from seeds (seed -> live)")
+    sub.add_parser("bake", help="Snapshot live volumes into seeds (live -> seed)")
+    sub.add_parser("cron", help="Run reset/bake on CRON_SCHEDULE (requires CRON_SCHEDULE env)")
+    args = parser.parse_args()
+
     setup_logging()
 
     if not VOLUME_PAIRS:
@@ -385,26 +414,17 @@ def main():
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
 
-    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-
-    if cmd == "reset":
+    if args.command == "reset":
         resetter.reset_once()
-    elif cmd == "bake":
+    elif args.command == "bake":
         resetter.bake_once()
-    elif cmd == "cron":
+    elif args.command == "cron":
         start_cron(resetter)
-    elif cmd == "":
-        if CRON_SCHEDULE:
-            start_cron(resetter)
-        else:
-            print("Usage:")
-            print("  reset  # restore seed → live")
-            print("  bake   # save live → seed")
-            print("  cron   # run on CRON_SCHEDULE")
-            sys.exit(1)
+    elif CRON_SCHEDULE:
+        start_cron(resetter)
     else:
-        # Pass through to exec like original bash version
-        os.execvp(sys.argv[1], sys.argv[1:])
+        parser.print_help()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

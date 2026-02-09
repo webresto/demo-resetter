@@ -71,8 +71,9 @@ If you're already inside the resetter container shell (e.g., via `docker exec -i
 
 ```bash
 # From inside the container
-/entrypoint.sh reset  # Restore seed → live
-/entrypoint.sh bake   # Save live → seed
+python /resetter.py reset   # Restore seed → live
+python /resetter.py bake    # Save live → seed
+python /resetter.py --help  # Show full help
 ```
 
 #### Scheduled runs with cron (example: every day at 04:00)
