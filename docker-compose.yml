@@ -39,6 +39,7 @@ services:
 
   # Demo resetter - automatically resets database from seed every hour
   resetter:
+    build: ./resetter
     image: 'ghcr.io/webresto/demo-resetter:main'
     container_name: demo_resetter
     restart: unless-stopped
