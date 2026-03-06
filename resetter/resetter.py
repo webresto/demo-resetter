@@ -11,6 +11,9 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import urllib.request
+import urllib.parse
+
 import docker
 from croniter import croniter
 
@@ -22,10 +25,23 @@ SERVICES = os.environ.get("SERVICES", "")
 CRON_SCHEDULE = os.environ.get("CRON_SCHEDULE", "")
 CRON_COMMAND = os.environ.get("CRON_COMMAND", "reset")
 LOG_FILE = os.environ.get("LOG_FILE", "/var/log/resetter.log")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 ALPINE_IMAGE = "alpine:3.20"
 
 log = logging.getLogger("resetter")
+
+
+def send_telegram(message: str):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": message}).encode()
+        urllib.request.urlopen(url, data=data, timeout=10)
+    except Exception as e:
+        log.debug("[DEBUG] Telegram notify failed: %s", e)
 
 
 def setup_logging():
@@ -234,7 +250,8 @@ class Resetter:
                 except Exception as e:
                     log.debug("[DEBUG] Failed to start %s: %s", container.name, e)
             else:
-                log.debug("[DEBUG] No container found matching: %s", s)
+                log.error("[ERROR] Container not found for service: %s — cannot start", s)
+                send_telegram(f"🚨 Resetter: container not found for service '{s}' — cannot start after reset")
 
         log.debug("[DEBUG] Final container status:")
         for c in client.containers.list():
