@@ -226,6 +226,7 @@ class Resetter:
             if container:
                 try:
                     container.stop()
+                    container.wait()
                     log.debug("[DEBUG] Stopped container: %s", container.name)
                 except Exception as e:
                     log.debug("[DEBUG] Failed to stop %s: %s", container.name, e)
